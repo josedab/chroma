@@ -273,6 +273,22 @@ class Settings(BaseSettings):  # type: ignore
     chroma_logservice_host = "localhost"
     chroma_logservice_port = 50052
 
+    # ===================
+    # Read Replica config
+    # ===================
+    # Mode: "primary" (handles writes and reads) or "replica" (handles reads only)
+    chroma_mode: Literal["primary", "replica"] = "primary"
+    # Unique identifier for this replica instance
+    chroma_replica_id: Optional[str] = None
+    # Poll interval in seconds for replica to check for new log entries
+    chroma_replica_poll_interval_seconds: float = 0.1
+    # Maximum replication lag in seconds before warning
+    chroma_replica_max_lag_seconds: int = 5
+    # List of replica URLs for client-side load balancing (comma-separated)
+    chroma_replica_hosts: Optional[str] = None
+    # Load balancing strategy: "round_robin" or "random"
+    chroma_load_balancing_strategy: Literal["round_robin", "random"] = "round_robin"
+
     chroma_quota_provider_impl: Optional[str] = None
     chroma_rate_limiting_provider_impl: Optional[str] = None
 

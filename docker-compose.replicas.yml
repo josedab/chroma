@@ -1,0 +1,127 @@
+version: '3.8'
+
+# Docker Compose configuration for Chroma with Read Replicas
+#
+# This deployment demonstrates the read replica architecture:
+# - 1 primary node (handles writes and reads)
+# - 2 replica nodes (handle reads only)
+# - 1 log service (for replication)
+#
+# Usage:
+#   docker-compose -f docker-compose.replicas.yml up
+#
+# Ports:
+#   - 8001: Primary (write operations)
+#   - 8002: Replica 1 (read operations)
+#   - 8003: Replica 2 (read operations)
+
+services:
+  # Log Service - Central write-ahead log for replication
+  log-service:
+    image: chromadb/chroma:latest
+    container_name: chroma-log-service
+    ports:
+      - "50051:50051"
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+    volumes:
+      - log-data:/chroma/chroma
+    networks:
+      - chroma-network
+    command: ["uvicorn", "chromadb.app:app", "--host", "0.0.0.0", "--port", "50051"]
+
+  # Primary Node - Handles writes and reads
+  chroma-primary:
+    image: chromadb/chroma:latest
+    container_name: chroma-primary
+    depends_on:
+      - log-service
+    ports:
+      - "8001:8000"
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - CHROMA_MODE=primary
+      - CHROMA_LOGSERVICE_HOST=log-service
+      - CHROMA_LOGSERVICE_PORT=50051
+      - ALLOW_RESET=TRUE
+    volumes:
+      - primary-data:/chroma/chroma
+    networks:
+      - chroma-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Replica 1 - Read-only replica (US-East)
+  chroma-replica-1:
+    image: chromadb/chroma:latest
+    container_name: chroma-replica-1
+    depends_on:
+      - log-service
+      - chroma-primary
+    ports:
+      - "8002:8000"
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - CHROMA_MODE=replica
+      - CHROMA_REPLICA_ID=replica-1
+      - CHROMA_LOGSERVICE_HOST=log-service
+      - CHROMA_LOGSERVICE_PORT=50051
+      - CHROMA_REPLICA_POLL_INTERVAL_SECONDS=0.1
+      - CHROMA_REPLICA_MAX_LAG_SECONDS=5
+    volumes:
+      - replica-1-data:/chroma/chroma
+    networks:
+      - chroma-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Replica 2 - Read-only replica (US-West)
+  chroma-replica-2:
+    image: chromadb/chroma:latest
+    container_name: chroma-replica-2
+    depends_on:
+      - log-service
+      - chroma-primary
+    ports:
+      - "8003:8000"
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - CHROMA_MODE=replica
+      - CHROMA_REPLICA_ID=replica-2
+      - CHROMA_LOGSERVICE_HOST=log-service
+      - CHROMA_LOGSERVICE_PORT=50051
+      - CHROMA_REPLICA_POLL_INTERVAL_SECONDS=0.1
+      - CHROMA_REPLICA_MAX_LAG_SECONDS=5
+    volumes:
+      - replica-2-data:/chroma/chroma
+    networks:
+      - chroma-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  log-data:
+    driver: local
+  primary-data:
+    driver: local
+  replica-1-data:
+    driver: local
+  replica-2-data:
+    driver: local
+
+networks:
+  chroma-network:
+    driver: bridge
