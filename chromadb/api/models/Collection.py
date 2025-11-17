@@ -498,6 +498,53 @@ class Collection(CollectionCommon["ServerAPI"]):
             database=self.database,
         )
 
+    def compact(self) -> None:
+        """Trigger manual compaction for this collection.
+
+        Compaction reclaims space from deleted records and optimizes
+        index structures. This runs in the background and does not
+        block queries.
+
+        Returns:
+            None
+
+        Example:
+            >>> collection.compact()
+            >>> status = collection.get_compaction_status()
+            >>> print(status)
+            {'in_progress': True, 'progress': 0.45}
+        """
+        self._client._compact(
+            collection_id=self.id,
+            tenant=self.tenant,
+            database=self.database,
+        )
+
+    def get_compaction_status(self) -> Dict[str, Any]:
+        """Get the status of compaction for this collection.
+
+        Returns:
+            Dict containing:
+                - in_progress: Boolean indicating if compaction is running
+                - progress: Float from 0.0 to 1.0 indicating progress
+                - segments: List of per-segment status details
+                - estimated_completion: ISO timestamp (if in progress)
+
+        Example:
+            >>> status = collection.get_compaction_status()
+            >>> print(status)
+            {
+                'in_progress': True,
+                'progress': 0.45,
+                'segments': [...]
+            }
+        """
+        return self._client._get_compaction_status(
+            collection_id=self.id,
+            tenant=self.tenant,
+            database=self.database,
+        )
+
     def attach_function(
         self,
         function_id: str,

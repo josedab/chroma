@@ -773,6 +773,66 @@ class SegmentAPI(ServerAPI):
             )
         )
 
+    @trace_method("SegmentAPI._compact", OpenTelemetryGranularity.OPERATION)
+    @override
+    @rate_limit
+    def _compact(
+        self,
+        collection_id: UUID,
+        tenant: str = DEFAULT_TENANT,
+        database: str = DEFAULT_DATABASE,
+    ) -> None:
+        """Trigger manual compaction for a collection."""
+        add_attributes_to_current_span({"collection_id": str(collection_id)})
+
+        logger.info(f"Manual compaction triggered for collection {collection_id}")
+
+        # Import here to avoid circular dependency
+        from chromadb.segment.impl.compaction.scheduler import CompactionScheduler
+
+        # Get or create compaction scheduler
+        if not hasattr(self, "_compaction_scheduler"):
+            self._compaction_scheduler = CompactionScheduler(self._system)
+
+        # Trigger manual compaction
+        try:
+            self._compaction_scheduler.trigger_manual_compaction(
+                collection_id, self._manager
+            )
+        except Exception as e:
+            logger.error(f"Failed to trigger compaction for collection {collection_id}: {e}")
+            raise
+
+    @trace_method("SegmentAPI._get_compaction_status", OpenTelemetryGranularity.OPERATION)
+    @override
+    @rate_limit
+    def _get_compaction_status(
+        self,
+        collection_id: UUID,
+        tenant: str = DEFAULT_TENANT,
+        database: str = DEFAULT_DATABASE,
+    ) -> Dict[str, Any]:
+        """Get compaction status for a collection."""
+        add_attributes_to_current_span({"collection_id": str(collection_id)})
+
+        # Import here to avoid circular dependency
+        from chromadb.segment.impl.compaction.scheduler import CompactionScheduler
+
+        # Get or create compaction scheduler
+        if not hasattr(self, "_compaction_scheduler"):
+            self._compaction_scheduler = CompactionScheduler(self._system)
+
+        # Get compaction status
+        try:
+            return self._compaction_scheduler.get_compaction_status(collection_id)
+        except Exception as e:
+            logger.error(f"Failed to get compaction status for collection {collection_id}: {e}")
+            return {
+                "in_progress": False,
+                "progress": 0.0,
+                "error": str(e),
+            }
+
     @trace_method("SegmentAPI._count", OpenTelemetryGranularity.OPERATION)
     @retry(  # type: ignore[misc]
         retry=retry_if_exception(lambda e: isinstance(e, VersionMismatchError)),

@@ -1,0 +1,45 @@
+# Example Helm values for enabling automatic compaction in Chroma
+# Place this in your Helm values file for distributed Chroma deployment
+
+compactionService:
+  # Existing compaction service configuration...
+  replicaCount: 1
+  image:
+    repository: chromadb/chroma
+    tag: latest
+
+  # Automatic compaction configuration (NEW)
+  automaticCompaction:
+    # Enable automatic background compaction
+    enabled: true
+
+    # Cron schedule for compaction checks (default: daily at 2 AM)
+    schedule: "0 2 * * *"
+
+    # Size threshold: compact segments larger than this (in GB)
+    sizeThresholdGb: 1.0
+
+    # Fragmentation threshold: compact if fragmentation exceeds this ratio
+    # Fragmentation is estimated as the ratio of deleted records
+    fragmentationThreshold: 0.2  # 20%
+
+    # Deleted records threshold: compact if deleted records exceed this ratio
+    deletedThreshold: 0.3  # 30%
+
+    # Idle days: compact segments that haven't been modified for this many days
+    # (only if they also have some fragmentation)
+    idleDays: 7
+
+    # Check interval: how often to check for segments needing compaction (in seconds)
+    checkIntervalSeconds: 3600  # 1 hour
+
+    # Maximum number of concurrent compactions to run
+    maxConcurrent: 1
+
+  resources:
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"

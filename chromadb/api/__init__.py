@@ -815,6 +815,44 @@ class ServerAPI(BaseAPI, AdminAPI, Component):
         pass
 
     @abstractmethod
+    def _compact(
+        self,
+        collection_id: UUID,
+        tenant: str = DEFAULT_TENANT,
+        database: str = DEFAULT_DATABASE,
+    ) -> None:
+        """[Internal] Trigger manual compaction for a collection.
+
+        Args:
+            collection_id: The UUID of the collection to compact.
+            tenant: The tenant name
+            database: The database name
+
+        Returns:
+            None
+        """
+        pass
+
+    @abstractmethod
+    def _get_compaction_status(
+        self,
+        collection_id: UUID,
+        tenant: str = DEFAULT_TENANT,
+        database: str = DEFAULT_DATABASE,
+    ) -> Dict[str, Any]:
+        """[Internal] Get compaction status for a collection.
+
+        Args:
+            collection_id: The UUID of the collection.
+            tenant: The tenant name
+            database: The database name
+
+        Returns:
+            Dict containing compaction status information
+        """
+        pass
+
+    @abstractmethod
     def attach_function(
         self,
         function_id: str,

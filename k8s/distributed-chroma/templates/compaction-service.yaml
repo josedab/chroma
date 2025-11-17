@@ -69,6 +69,41 @@ spec:
             - name: CONFIG_PATH
               value: /config/config.yaml
             {{ end }}
+            # Automatic compaction configuration
+            {{ if .Values.compactionService.automaticCompaction }}
+            {{ if .Values.compactionService.automaticCompaction.enabled }}
+            - name: CHROMA_COMPACTION_ENABLED
+              value: "{{ .Values.compactionService.automaticCompaction.enabled }}"
+            {{ end }}
+            {{ if .Values.compactionService.automaticCompaction.schedule }}
+            - name: CHROMA_COMPACTION_SCHEDULE
+              value: "{{ .Values.compactionService.automaticCompaction.schedule }}"
+            {{ end }}
+            {{ if .Values.compactionService.automaticCompaction.sizeThresholdGb }}
+            - name: CHROMA_COMPACTION_SIZE_THRESHOLD_GB
+              value: "{{ .Values.compactionService.automaticCompaction.sizeThresholdGb }}"
+            {{ end }}
+            {{ if .Values.compactionService.automaticCompaction.fragmentationThreshold }}
+            - name: CHROMA_COMPACTION_FRAGMENTATION_THRESHOLD
+              value: "{{ .Values.compactionService.automaticCompaction.fragmentationThreshold }}"
+            {{ end }}
+            {{ if .Values.compactionService.automaticCompaction.deletedThreshold }}
+            - name: CHROMA_COMPACTION_DELETED_THRESHOLD
+              value: "{{ .Values.compactionService.automaticCompaction.deletedThreshold }}"
+            {{ end }}
+            {{ if .Values.compactionService.automaticCompaction.idleDays }}
+            - name: CHROMA_COMPACTION_IDLE_DAYS
+              value: "{{ .Values.compactionService.automaticCompaction.idleDays }}"
+            {{ end }}
+            {{ if .Values.compactionService.automaticCompaction.checkIntervalSeconds }}
+            - name: CHROMA_COMPACTION_CHECK_INTERVAL_SECONDS
+              value: "{{ .Values.compactionService.automaticCompaction.checkIntervalSeconds }}"
+            {{ end }}
+            {{ if .Values.compactionService.automaticCompaction.maxConcurrent }}
+            - name: CHROMA_COMPACTION_MAX_CONCURRENT
+              value: "{{ .Values.compactionService.automaticCompaction.maxConcurrent }}"
+            {{ end }}
+            {{ end }}
             {{ range .Values.compactionService.env }}
             - name: {{ .name }}
               # TODO properly use flow control here to check which type of value we need.
