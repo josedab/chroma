@@ -25,6 +25,14 @@ from chromadb.telemetry.opentelemetry import (
     OpenTelemetryGranularity,
     trace_method,
 )
+from chromadb.telemetry.opentelemetry.metrics import (
+    record_query_duration,
+    increment_query_counter,
+    increment_query_error_counter,
+    record_query_result_size,
+    update_collection_count,
+    update_documents_per_collection,
+)
 from chromadb.telemetry.product import ProductTelemetryClient
 from chromadb.ingest import Producer
 from chromadb.types import Collection as CollectionModel
@@ -272,6 +280,8 @@ class SegmentAPI(ServerAPI):
             segments = self._manager.prepare_segments_for_new_collection(coll)
             for segment in segments:
                 self._sysdb.create_segment(segment)
+            # Track collection creation metric
+            update_collection_count(1)
         else:
             logger.debug(
                 f"Collection {name} already exists, returning existing collection."
@@ -459,6 +469,8 @@ class SegmentAPI(ServerAPI):
             self._sysdb.delete_collection(
                 existing[0].id, tenant=tenant, database=database
             )
+            # Track collection deletion metric
+            update_collection_count(-1)
         else:
             raise ValueError(f"Collection {name} does not exist.")
 
@@ -643,6 +655,8 @@ class SegmentAPI(ServerAPI):
         tenant: str = DEFAULT_TENANT,
         database: str = DEFAULT_DATABASE,
     ) -> GetResult:
+        start_time = time.time()
+
         add_attributes_to_current_span(
             {
                 "collection_id": str(collection_id),
@@ -680,20 +694,47 @@ class SegmentAPI(ServerAPI):
             )
         )
 
-        return self._executor.get(
-            GetPlan(
-                scan,
-                Filter(ids, where, where_document),
-                Limit(offset or 0, limit),
-                Projection(
-                    "documents" in include,
-                    "embeddings" in include,
-                    "metadatas" in include,
-                    False,
-                    "uris" in include,
-                ),
+        try:
+            result = self._executor.get(
+                GetPlan(
+                    scan,
+                    Filter(ids, where, where_document),
+                    Limit(offset or 0, limit),
+                    Projection(
+                        "documents" in include,
+                        "embeddings" in include,
+                        "metadatas" in include,
+                        False,
+                        "uris" in include,
+                    ),
+                )
             )
-        )
+
+            # Record metrics
+            duration = time.time() - start_time
+            collection_name = scan.collection.name
+            metrics_attrs = {
+                "operation_type": "get",
+                "collection_name": collection_name,
+            }
+            increment_query_counter(metrics_attrs)
+            record_query_duration(duration, metrics_attrs)
+
+            # Record result size
+            if result and "ids" in result and result["ids"]:
+                record_query_result_size(len(result["ids"]), metrics_attrs)
+
+            return result
+        except Exception as e:
+            duration = time.time() - start_time
+            collection_name = scan.collection.name if scan and scan.collection else "unknown"
+            metrics_attrs = {
+                "operation_type": "get",
+                "collection_name": collection_name,
+            }
+            record_query_duration(duration, metrics_attrs)
+            increment_query_error_counter(type(e).__name__, metrics_attrs)
+            raise
 
     @trace_method("SegmentAPI._delete", OpenTelemetryGranularity.OPERATION)
     @override
@@ -819,6 +860,8 @@ class SegmentAPI(ServerAPI):
         tenant: str = DEFAULT_TENANT,
         database: str = DEFAULT_DATABASE,
     ) -> QueryResult:
+        start_time = time.time()
+
         add_attributes_to_current_span(
             {
                 "collection_id": str(collection_id),
@@ -863,20 +906,48 @@ class SegmentAPI(ServerAPI):
             n_results=n_results,
         )
 
-        return self._executor.knn(
-            KNNPlan(
-                scan,
-                KNN(query_embeddings, n_results),
-                Filter(None, where, where_document),
-                Projection(
-                    "documents" in include,
-                    "embeddings" in include,
-                    "metadatas" in include,
-                    "distances" in include,
-                    "uris" in include,
-                ),
+        try:
+            result = self._executor.knn(
+                KNNPlan(
+                    scan,
+                    KNN(query_embeddings, n_results),
+                    Filter(None, where, where_document),
+                    Projection(
+                        "documents" in include,
+                        "embeddings" in include,
+                        "metadatas" in include,
+                        "distances" in include,
+                        "uris" in include,
+                    ),
+                )
             )
-        )
+
+            # Record metrics
+            duration = time.time() - start_time
+            collection_name = scan.collection.name
+            metrics_attrs = {
+                "operation_type": "query",
+                "collection_name": collection_name,
+            }
+            increment_query_counter(metrics_attrs)
+            record_query_duration(duration, metrics_attrs)
+
+            # Record result size (first dimension of result)
+            if result and "ids" in result and result["ids"]:
+                result_count = sum(len(ids_list) for ids_list in result["ids"])
+                record_query_result_size(result_count, metrics_attrs)
+
+            return result
+        except Exception as e:
+            duration = time.time() - start_time
+            collection_name = scan.collection.name if scan and scan.collection else "unknown"
+            metrics_attrs = {
+                "operation_type": "query",
+                "collection_name": collection_name,
+            }
+            record_query_duration(duration, metrics_attrs)
+            increment_query_error_counter(type(e).__name__, metrics_attrs)
+            raise
 
     @trace_method("SegmentAPI._peek", OpenTelemetryGranularity.OPERATION)
     @override

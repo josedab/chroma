@@ -1,0 +1,122 @@
+groups:
+  - name: chroma_query_performance
+    interval: 30s
+    rules:
+      - alert: HighQueryLatency
+        expr: histogram_quantile(0.99, sum(rate(chroma_query_duration_bucket[5m])) by (le, operation_type)) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: chroma
+        annotations:
+          summary: "High query latency detected"
+          description: "p99 query latency for {{ $labels.operation_type }} is {{ $value }}s (threshold: 1s)"
+
+      - alert: CriticalQueryLatency
+        expr: histogram_quantile(0.99, sum(rate(chroma_query_duration_bucket[5m])) by (le, operation_type)) > 5
+        for: 2m
+        labels:
+          severity: critical
+          component: chroma
+        annotations:
+          summary: "Critical query latency detected"
+          description: "p99 query latency for {{ $labels.operation_type }} is {{ $value }}s (threshold: 5s)"
+
+      - alert: HighErrorRate
+        expr: sum(rate(chroma_query_errors[5m])) / sum(rate(chroma_query_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          component: chroma
+        annotations:
+          summary: "High query error rate"
+          description: "Query error rate is {{ $value | humanizePercentage }} (threshold: 1%)"
+
+      - alert: CriticalErrorRate
+        expr: sum(rate(chroma_query_errors[5m])) / sum(rate(chroma_query_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: chroma
+        annotations:
+          summary: "Critical query error rate"
+          description: "Query error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+  - name: chroma_segment_health
+    interval: 60s
+    rules:
+      - alert: LargeSegmentSize
+        expr: chroma_segment_size_bytes > 10737418240  # 10 GB
+        for: 10m
+        labels:
+          severity: warning
+          component: chroma
+        annotations:
+          summary: "Large segment detected"
+          description: "Segment {{ $labels.segment_id }} in collection {{ $labels.collection_name }} is {{ $value | humanize1024 }}B (threshold: 10GB). Consider compaction."
+
+      - alert: HighSegmentCount
+        expr: sum(chroma_segment_count) by (collection_name) > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: chroma
+        annotations:
+          summary: "High segment count"
+          description: "Collection {{ $labels.collection_name }} has {{ $value }} segments (threshold: 100). Consider compaction."
+
+      - alert: NoSegments
+        expr: sum(chroma_segment_count) == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: chroma
+        annotations:
+          summary: "No segments found"
+          description: "Chroma has no active segments. System may not be functioning correctly."
+
+  - name: chroma_collection_health
+    interval: 60s
+    rules:
+      - alert: LargeCollection
+        expr: chroma_collection_documents > 10000000  # 10 million
+        for: 10m
+        labels:
+          severity: info
+          component: chroma
+        annotations:
+          summary: "Large collection detected"
+          description: "Collection {{ $labels.collection_name }} has {{ $value }} documents (threshold: 10M)"
+
+      - alert: NoCollections
+        expr: sum(chroma_collection_count) == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: chroma
+        annotations:
+          summary: "No collections found"
+          description: "Chroma has no active collections"
+
+  - name: chroma_availability
+    interval: 30s
+    rules:
+      - alert: ChromaDown
+        expr: up{job="chroma"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: chroma
+        annotations:
+          summary: "Chroma instance is down"
+          description: "Chroma instance {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: NoQueryTraffic
+        expr: sum(rate(chroma_query_total[5m])) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: chroma
+        annotations:
+          summary: "No query traffic detected"
+          description: "Chroma has received no queries in the last 10 minutes"

@@ -26,6 +26,10 @@ from chromadb.telemetry.opentelemetry import (
     OpenTelemetryGranularity,
     trace_method,
 )
+from chromadb.telemetry.opentelemetry.metrics import (
+    update_segment_count,
+    update_segment_size,
+)
 from chromadb.types import Collection, Operation, Segment, SegmentScope, Metadata
 from typing import Dict, Type, Sequence, Optional, cast
 from uuid import UUID, uuid4
@@ -146,6 +150,10 @@ class LocalSegmentManager(SegmentManager):
         metadata_segment = _segment(
             SegmentType.SQLITE, SegmentScope.METADATA, collection
         )
+
+        # Track segment creation metrics
+        update_segment_count(collection.name, 2)  # 2 segments per collection
+
         return [vector_segment, metadata_segment]
 
     @trace_method(
@@ -155,6 +163,17 @@ class LocalSegmentManager(SegmentManager):
     @override
     def delete_segments(self, collection_id: UUID) -> Sequence[UUID]:
         segments = self._sysdb.get_segments(collection=collection_id)
+
+        # Get collection name for metrics (from first segment)
+        collection_name = "unknown"
+        if segments:
+            try:
+                collection = self._sysdb.get_collections(id=collection_id)
+                if collection:
+                    collection_name = collection[0].name
+            except Exception:
+                pass
+
         for segment in segments:
             if segment["id"] in self._instances:
                 if segment["type"] == SegmentType.HNSW_LOCAL_PERSISTED.value:
@@ -168,6 +187,11 @@ class LocalSegmentManager(SegmentManager):
                 self.segment_cache[SegmentScope.VECTOR].pop(collection_id)
             if segment["scope"] is SegmentScope.METADATA:
                 self.segment_cache[SegmentScope.METADATA].pop(collection_id)
+
+        # Track segment deletion metrics
+        if segments:
+            update_segment_count(collection_name, -len(segments))
+
         return [s["id"] for s in segments]
 
     def _get_segment_disk_size(self, collection_id: UUID) -> int:

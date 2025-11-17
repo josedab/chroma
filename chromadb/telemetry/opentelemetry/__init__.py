@@ -57,6 +57,14 @@ class OpenTelemetryClient(Component):
                 else "none"
             ),
         )
+        # Initialize metrics if enabled
+        from chromadb.telemetry.opentelemetry.metrics import init_metrics
+        if system.settings.chroma_otel_collection_endpoint:
+            init_metrics(
+                service_name=system.settings.chroma_otel_service_name,
+                endpoint=system.settings.chroma_otel_collection_endpoint,
+                headers=system.settings.chroma_otel_collection_headers,
+            )
 
 
 tracer: Optional[trace.Tracer] = None
