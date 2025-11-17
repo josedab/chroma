@@ -88,6 +88,18 @@ from chromadb.types import Collection as CollectionModel
 
 logger = logging.getLogger(__name__)
 
+# Import GraphQL router factory
+try:
+    from chromadb.server.graphql import create_graphql_router
+
+    GRAPHQL_AVAILABLE = True
+except ImportError:
+    logger.warning(
+        "GraphQL dependencies not available. GraphQL endpoint will not be mounted. "
+        "Install with: pip install 'chromadb[dev]' or pip install 'strawberry-graphql[fastapi]'"
+    )
+    GRAPHQL_AVAILABLE = False
+
 
 def rate_limit(func):
     @wraps(func)
@@ -237,6 +249,17 @@ class FastAPI(Server):
         self.setup_v2_routes()
 
         self._app.include_router(self.router)
+
+        # Mount GraphQL endpoint if available
+        if GRAPHQL_AVAILABLE:
+            try:
+                graphql_router = create_graphql_router(self._api)
+                self._app.include_router(graphql_router, prefix="/graphql")
+                logger.info("GraphQL endpoint mounted at /graphql")
+            except Exception as e:
+                logger.error(f"Failed to mount GraphQL endpoint: {e}")
+        else:
+            logger.info("GraphQL endpoint not available (dependencies not installed)")
 
         use_route_names_as_operation_ids(self._app)
         instrument_fastapi(self._app)
