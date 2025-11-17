@@ -1,0 +1,50 @@
+%% Chroma Write Path Data Flow
+%% Commit: 091f8bd5c553f8267c48664e98fb32215055f58e
+
+sequenceDiagram
+    participant User
+    participant Client as ClientAPI
+    participant API as ServerAPI<br/>(RustBindingsAPI)
+    participant Producer
+    participant WAL as WAL3<br/>Write-Ahead Log
+    participant Consumer
+    participant VectorSeg as Vector Segment<br/>(HNSW)
+    participant MetaSeg as Metadata Segment<br/>(SQLite)
+
+    User->>Client: collection.add(documents, embeddings, metadata, ids)
+    Note over User,Client: Python/JS/HTTP client
+
+    Client->>Client: Validate inputs<br/>Generate embeddings if needed
+    Client->>API: _add(collection_id, ...)
+
+    API->>API: Get collection metadata
+    API->>Producer: submit_batch(records)
+    Note over Producer: Async write path
+
+    Producer->>WAL: append(records, seq_id)
+    Note over WAL: Durable write with sequence ID
+    WAL-->>Producer: seq_id committed
+
+    Producer-->>API: Acknowledgement (seq_id)
+    API-->>Client: Success
+    Client-->>User: add() returns
+
+    Note over Consumer,MetaSeg: Background processing (async)
+
+    Consumer->>WAL: poll_new_records()
+    WAL-->>Consumer: batch of records
+
+    par Parallel Writes
+        Consumer->>VectorSeg: add_vectors(embeddings, ids)
+        VectorSeg->>VectorSeg: Insert into HNSW index
+        and
+        Consumer->>MetaSeg: add_metadata(metadata, ids)
+        MetaSeg->>MetaSeg: INSERT INTO SQLite
+    end
+
+    VectorSeg-->>Consumer: Success
+    MetaSeg-->>Consumer: Success
+
+    Consumer->>Consumer: Update watermark (seq_id)
+
+    Note over User,MetaSeg: Write is now queryable

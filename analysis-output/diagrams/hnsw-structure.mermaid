@@ -1,0 +1,72 @@
+%% HNSW Index Structure
+%% Commit: 091f8bd5c553f8267c48664e98fb32215055f58e
+
+graph TB
+    subgraph "HNSW Hierarchical Layers"
+        Layer3[Layer 3 Top<br/>Sparse, Long-range connections<br/>Few nodes]
+        Layer2[Layer 2<br/>Medium density]
+        Layer1[Layer 1<br/>Higher density]
+        Layer0[Layer 0 Base<br/>All vectors<br/>Densest layer]
+    end
+
+    subgraph "Search Algorithm"
+        Entry[Entry Point<br/>Top layer]
+        Greedy[Greedy Search<br/>Follow closest neighbor]
+        Descend[Descend to<br/>next layer]
+        Refine[Refine at<br/>base layer]
+        Result[K nearest<br/>neighbors]
+    end
+
+    subgraph "Node Structure"
+        Node[Vector Node]
+        Neighbors[Neighbor List<br/>Max M connections]
+        Vector[Vector Data<br/>float32 array]
+        ID[Node ID]
+    end
+
+    subgraph "Parameters"
+        M[M: Max connections<br/>per layer<br/>Trade-off: memory vs accuracy]
+        efC[ef_construction:<br/>Build-time search size<br/>Higher = better index]
+        efS[ef_search:<br/>Query-time search size<br/>Higher = better recall]
+        mL[mL: Layer selection<br/>Probability 1/ln(2)]
+    end
+
+    %% Layer connections
+    Layer3 --> Layer2
+    Layer2 --> Layer1
+    Layer1 --> Layer0
+
+    %% Search flow
+    Entry --> Greedy
+    Greedy --> Descend
+    Descend --> Greedy
+    Descend --> Refine
+    Refine --> Result
+
+    %% Node structure
+    Node --> Neighbors
+    Node --> Vector
+    Node --> ID
+    Neighbors -.M connections.-> M
+
+    %% Parameters influence
+    M -.controls.-> Neighbors
+    efC -.affects.-> Greedy
+    efS -.affects.-> Refine
+    mL -.determines.-> Layer3
+
+    %% Example values
+    M -.default 16.-> Neighbors
+    efC -.default 200.-> Greedy
+    efS -.default 50.-> Refine
+
+    %% Styling
+    classDef layerClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef searchClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef nodeClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef paramClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+
+    class Layer3,Layer2,Layer1,Layer0 layerClass
+    class Entry,Greedy,Descend,Refine,Result searchClass
+    class Node,Neighbors,Vector,ID nodeClass
+    class M,efC,efS,mL paramClass

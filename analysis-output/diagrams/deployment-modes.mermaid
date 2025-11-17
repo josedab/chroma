@@ -1,0 +1,95 @@
+%% Chroma Deployment Modes
+%% Commit: 091f8bd5c553f8267c48664e98fb32215055f58e
+
+graph TB
+    subgraph "Mode 1: Embedded (In-Memory)"
+        App1[Python Application]
+        Client1[chromadb.Client]
+        API1[SegmentAPI]
+        Mem1[(In-Memory<br/>No Persistence)]
+
+        App1 --> Client1
+        Client1 --> API1
+        API1 --> Mem1
+    end
+
+    subgraph "Mode 2: Persistent (Local)"
+        App2[Python Application]
+        Client2[chromadb.PersistentClient]
+        API2[RustBindingsAPI<br/>Rust Core]
+        Disk2[(Local Disk<br/>./chroma_db/)]
+        HNSW2[HNSW .bin files]
+        SQLite2[SQLite .db]
+        WAL2[WAL3 logs]
+
+        App2 --> Client2
+        Client2 --> API2
+        API2 --> Disk2
+        Disk2 --> HNSW2
+        Disk2 --> SQLite2
+        Disk2 --> WAL2
+    end
+
+    subgraph "Mode 3: Client-Server"
+        App3[Application]
+        HTTPClient3[chromadb.HttpClient]
+        Network3[HTTP/REST<br/>Port 8000]
+        Server3[Chroma Server<br/>FastAPI + uvicorn]
+        RustCore3[RustBindingsAPI]
+        Disk3[(Server Disk<br/>/data/)]
+
+        App3 --> HTTPClient3
+        HTTPClient3 --> Network3
+        Network3 --> Server3
+        Server3 --> RustCore3
+        RustCore3 --> Disk3
+    end
+
+    subgraph "Mode 4: Distributed (Kubernetes)"
+        App4[Application]
+        HTTPClient4[chromadb.HttpClient]
+        K8sLB[K8s Load Balancer<br/>Service]
+
+        subgraph "Frontend Pods"
+            FE1[Frontend Pod 1]
+            FE2[Frontend Pod 2]
+        end
+
+        subgraph "Backend Services"
+            SysDBPod[(SysDB<br/>StatefulSet)]
+            LogPod[Log Service<br/>StatefulSet]
+            QueryPod[Query Service<br/>StatefulSet]
+            CompactPod[Compaction<br/>Deployment]
+        end
+
+        subgraph "Storage"
+            S3[(S3/MinIO<br/>Object Storage)]
+        end
+
+        App4 --> HTTPClient4
+        HTTPClient4 --> K8sLB
+        K8sLB --> FE1
+        K8sLB --> FE2
+        FE1 --> SysDBPod
+        FE2 --> SysDBPod
+        FE1 --> LogPod
+        FE2 --> QueryPod
+        LogPod --> S3
+        QueryPod --> S3
+        CompactPod --> S3
+    end
+
+    %% Styling
+    classDef appClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef clientClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef apiClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef storageClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef networkClass fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef k8sClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+
+    class App1,App2,App3,App4 appClass
+    class Client1,Client2,HTTPClient3,HTTPClient4 clientClass
+    class API1,API2,RustCore3,Server3 apiClass
+    class Mem1,Disk2,Disk3,HNSW2,SQLite2,WAL2,S3,SysDBPod storageClass
+    class Network3,K8sLB networkClass
+    class FE1,FE2,LogPod,QueryPod,CompactPod k8sClass

@@ -1,0 +1,89 @@
+%% Chroma Dependency Injection System
+%% Commit: 091f8bd5c553f8267c48664e98fb32215055f58e
+
+graph TD
+    subgraph "System Initialization"
+        Settings[Settings<br/>Pydantic Config<br/>Environment Variables]
+        System[System<br/>Service Locator<br/>Component Registry]
+    end
+
+    subgraph "Core Components"
+        SysDB[SysDB<br/>requires: Settings]
+        Producer[Producer<br/>requires: Settings, SysDB]
+        Consumer[Consumer<br/>requires: Settings, SysDB]
+        SegMgr[SegmentManager<br/>requires: Settings, SysDB]
+        Executor[Executor<br/>requires: System, SegMgr]
+        Telemetry[OpenTelemetryClient<br/>requires: Settings]
+    end
+
+    subgraph "Segment Implementations"
+        VectorSeg[VectorSegment<br/>requires: Settings]
+        MetaSeg[MetadataSegment<br/>requires: Settings]
+        RecordSeg[RecordSegment<br/>requires: Settings]
+    end
+
+    subgraph "API Implementations"
+        SegAPI[SegmentAPI<br/>requires: System, Settings, SysDB, Producer, Consumer, SegMgr, Executor, Telemetry]
+        RustAPI[RustBindingsAPI<br/>requires: Settings]
+        FastAPIServer[FastAPI<br/>requires: System, Settings, Telemetry]
+    end
+
+    %% System initialization
+    Settings --> System
+    System -.manages.-> SysDB
+    System -.manages.-> Producer
+    System -.manages.-> Consumer
+    System -.manages.-> SegMgr
+    System -.manages.-> Executor
+    System -.manages.-> Telemetry
+
+    %% Component dependencies
+    SysDB --> Settings
+    Producer --> Settings
+    Producer --> SysDB
+    Consumer --> Settings
+    Consumer --> SysDB
+    SegMgr --> Settings
+    SegMgr --> SysDB
+    Executor --> System
+    Executor --> SegMgr
+    Telemetry --> Settings
+
+    %% Segment dependencies
+    VectorSeg --> Settings
+    MetaSeg --> Settings
+    RecordSeg --> Settings
+    SegMgr --> VectorSeg
+    SegMgr --> MetaSeg
+    SegMgr --> RecordSeg
+
+    %% API dependencies
+    SegAPI --> System
+    SegAPI --> Settings
+    SegAPI --> SysDB
+    SegAPI --> Producer
+    SegAPI --> Consumer
+    SegAPI --> SegMgr
+    SegAPI --> Executor
+    SegAPI --> Telemetry
+
+    RustAPI --> Settings
+    FastAPIServer --> System
+    FastAPIServer --> Settings
+    FastAPIServer --> Telemetry
+
+    %% Lazy initialization
+    System -.lazy init.-> SegAPI
+    System -.lazy init.-> RustAPI
+    System -.lazy init.-> FastAPIServer
+
+    %% Styling
+    classDef sysClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef coreClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef segClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef apiClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+
+    class Settings,System sysClass
+    class SysDB,Producer,Consumer,SegMgr,Executor,Telemetry coreClass
+    class VectorSeg,MetaSeg,RecordSeg segClass
+    class SegAPI,RustAPI,FastAPIServer apiClass

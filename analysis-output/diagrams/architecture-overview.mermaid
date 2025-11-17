@@ -1,0 +1,105 @@
+%% Chroma Architecture Overview
+%% Commit: 091f8bd5c553f8267c48664e98fb32215055f58e
+
+graph TB
+    subgraph "Client Layer"
+        PyClient[Python Client]
+        JSClient[JavaScript Client]
+        GoClient[Go Client]
+        HTTPClient[HTTP Client]
+    end
+
+    subgraph "API Layer"
+        ClientAPI[ClientAPI Interface]
+        SegmentAPI[SegmentAPI<br/>In-Process]
+        RustAPI[RustBindingsAPI<br/>Rust-Accelerated]
+        FastAPI[FastAPI<br/>HTTP Server]
+        CloudAPI[CloudAPI<br/>Managed Service]
+    end
+
+    subgraph "Execution Layer"
+        Executor[Query Executor]
+        Planner[Query Planner]
+        KNNPlan[KNN Plan]
+        GetPlan[Get Plan]
+        FilterPlan[Filter Plan]
+    end
+
+    subgraph "Segment Layer"
+        SegMgr[Segment Manager<br/>LRU Cache]
+        VectorSeg[Vector Segment<br/>HNSW Index]
+        MetaSeg[Metadata Segment<br/>SQLite]
+        RecordSeg[Record Segment<br/>WAL]
+    end
+
+    subgraph "Storage Layer"
+        HNSW[HNSW Index<br/>hnswlib]
+        SQLite[SQLite Database<br/>Metadata]
+        WAL3[WAL3<br/>Write-Ahead Log]
+        SysDB[SysDB<br/>System Catalog]
+        Blockstore[Blockstore<br/>Arrow/Parquet]
+    end
+
+    subgraph "Rust Core"
+        Worker[Worker Service]
+        Index[Index Module<br/>HNSW + Tantivy]
+        Distance[Distance Metrics]
+        Storage[Storage Backends<br/>S3/Local]
+    end
+
+    %% Client to API connections
+    PyClient --> ClientAPI
+    JSClient --> ClientAPI
+    GoClient --> ClientAPI
+    HTTPClient --> FastAPI
+
+    %% API implementations
+    ClientAPI --> SegmentAPI
+    ClientAPI --> RustAPI
+    ClientAPI --> FastAPI
+    ClientAPI --> CloudAPI
+
+    %% API to Execution
+    SegmentAPI --> Executor
+    RustAPI --> Worker
+    FastAPI --> Executor
+
+    %% Execution to Segments
+    Executor --> Planner
+    Planner --> KNNPlan
+    Planner --> GetPlan
+    Planner --> FilterPlan
+    Executor --> SegMgr
+
+    %% Segment Manager to Segments
+    SegMgr --> VectorSeg
+    SegMgr --> MetaSeg
+    SegMgr --> RecordSeg
+
+    %% Segments to Storage
+    VectorSeg --> HNSW
+    MetaSeg --> SQLite
+    RecordSeg --> WAL3
+    SegMgr --> SysDB
+
+    %% Rust Core connections
+    Worker --> Index
+    Worker --> Blockstore
+    Index --> HNSW
+    Index --> Distance
+    Blockstore --> Storage
+
+    %% Styling
+    classDef clientClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef apiClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef execClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef segClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef storageClass fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef rustClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+
+    class PyClient,JSClient,GoClient,HTTPClient clientClass
+    class ClientAPI,SegmentAPI,RustAPI,FastAPI,CloudAPI apiClass
+    class Executor,Planner,KNNPlan,GetPlan,FilterPlan execClass
+    class SegMgr,VectorSeg,MetaSeg,RecordSeg segClass
+    class HNSW,SQLite,WAL3,SysDB,Blockstore storageClass
+    class Worker,Index,Distance,Storage rustClass

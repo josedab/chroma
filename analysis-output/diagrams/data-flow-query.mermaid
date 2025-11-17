@@ -1,0 +1,44 @@
+%% Chroma Query Path Data Flow
+%% Commit: 091f8bd5c553f8267c48664e98fb32215055f58e
+
+sequenceDiagram
+    participant User
+    participant Client as ClientAPI
+    participant API as ServerAPI
+    participant Executor
+    participant Planner as Query Planner
+    participant VectorSeg as Vector Segment<br/>(HNSW)
+    participant MetaSeg as Metadata Segment<br/>(SQLite)
+
+    User->>Client: collection.query(query_texts, n_results, where, where_document)
+    Note over User,Client: Synchronous query
+
+    Client->>Client: Embed query_texts<br/>using embedding function
+    Client->>API: _query(collection_id, query_embeddings, filters)
+
+    API->>Executor: execute(collection, query)
+    Executor->>Planner: create_plan(query_type, filters)
+
+    Planner->>Planner: Analyze filters<br/>Optimize execution order
+    Planner-->>Executor: KNNPlan + FilterPlan
+
+    Note over Executor: Execute query plan
+
+    Executor->>VectorSeg: query_vectors(embeddings, k)
+    Note over VectorSeg: HNSW approximate<br/>nearest neighbor search
+    VectorSeg->>VectorSeg: HNSW search (Rust)
+    VectorSeg-->>Executor: candidate_ids + distances
+
+    Executor->>MetaSeg: get_metadata(candidate_ids, where, where_document)
+    Note over MetaSeg: SQL query with filters
+    MetaSeg->>MetaSeg: SELECT WHERE ...<br/>(SQLite query)
+    MetaSeg-->>Executor: filtered_records
+
+    Executor->>Executor: Join vectors + metadata<br/>Apply where_document filter<br/>Sort by distance
+    Executor->>Executor: Limit to n_results
+
+    Executor-->>API: QueryResult(ids, embeddings, documents, metadatas, distances)
+    API-->>Client: QueryResult
+    Client-->>User: query() returns results
+
+    Note over User,Client: Results ranked by similarity

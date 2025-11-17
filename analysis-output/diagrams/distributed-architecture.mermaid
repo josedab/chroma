@@ -1,0 +1,110 @@
+%% Chroma Distributed Architecture
+%% Commit: 091f8bd5c553f8267c48664e98fb32215055f58e
+
+graph TB
+    subgraph "Client Tier"
+        Client[Chroma Client<br/>Python/JS/HTTP]
+    end
+
+    subgraph "Frontend Tier"
+        LB[Load Balancer]
+        FE1[Frontend 1]
+        FE2[Frontend 2]
+        FE3[Frontend N]
+    end
+
+    subgraph "Coordination Tier"
+        SysDB[(SysDB<br/>PostgreSQL/SQLite<br/>Collections, Segments, Tenants)]
+        Memberlist[Memberlist<br/>Service Discovery]
+    end
+
+    subgraph "Log Tier"
+        LogSvc1[Log Service 1]
+        LogSvc2[Log Service 2]
+        LogSvcN[Log Service N]
+        S3Log[(S3/MinIO<br/>WAL3 Storage)]
+    end
+
+    subgraph "Query Tier"
+        Q1[Query Service 1<br/>Segments: A, D, G]
+        Q2[Query Service 2<br/>Segments: B, E, H]
+        Q3[Query Service N<br/>Segments: C, F, I]
+        S3Seg[(S3/MinIO<br/>Segment Storage)]
+    end
+
+    subgraph "Compaction Tier"
+        Compact1[Compaction Worker 1]
+        Compact2[Compaction Worker 2]
+    end
+
+    %% Client connections
+    Client --> LB
+    LB --> FE1
+    LB --> FE2
+    LB --> FE3
+
+    %% Frontend to coordination
+    FE1 --> SysDB
+    FE2 --> SysDB
+    FE3 --> SysDB
+    FE1 --> Memberlist
+    FE2 --> Memberlist
+    FE3 --> Memberlist
+
+    %% Frontend to log tier (writes)
+    FE1 -.write.-> LogSvc1
+    FE1 -.write.-> LogSvc2
+    FE1 -.write.-> LogSvcN
+
+    %% Frontend to query tier (reads)
+    FE1 -.query.-> Q1
+    FE1 -.query.-> Q2
+    FE1 -.query.-> Q3
+
+    %% Log tier to storage
+    LogSvc1 --> S3Log
+    LogSvc2 --> S3Log
+    LogSvcN --> S3Log
+
+    %% Query tier to storage
+    Q1 --> S3Seg
+    Q2 --> S3Seg
+    Q3 --> S3Seg
+
+    %% Query tier reads logs
+    Q1 -.consume.-> LogSvc1
+    Q2 -.consume.-> LogSvc2
+    Q3 -.consume.-> LogSvcN
+
+    %% Compaction tier
+    Compact1 --> SysDB
+    Compact2 --> SysDB
+    Compact1 -.read.-> Q1
+    Compact1 -.read.-> Q2
+    Compact2 -.read.-> Q3
+    Compact1 --> S3Seg
+    Compact2 --> S3Seg
+
+    %% Service discovery
+    Memberlist -.discover.-> LogSvc1
+    Memberlist -.discover.-> LogSvc2
+    Memberlist -.discover.-> Q1
+    Memberlist -.discover.-> Q2
+    Memberlist -.discover.-> Compact1
+
+    %% Styling
+    classDef clientClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef feClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef coordClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef logClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef queryClass fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef compactClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    classDef storageClass fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+
+    class Client clientClass
+    class LB,FE1,FE2,FE3 feClass
+    class SysDB,Memberlist coordClass
+    class LogSvc1,LogSvc2,LogSvcN logClass
+    class Q1,Q2,Q3 queryClass
+    class Compact1,Compact2 compactClass
+    class S3Log,S3Seg storageClass

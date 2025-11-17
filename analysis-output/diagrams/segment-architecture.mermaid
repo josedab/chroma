@@ -1,0 +1,89 @@
+%% Chroma Segment Architecture
+%% Commit: 091f8bd5c553f8267c48664e98fb32215055f58e
+
+graph TB
+    subgraph "Collection"
+        CollMeta[Collection Metadata<br/>name, config, tenant, database]
+    end
+
+    subgraph "Segment Types"
+        VecType[Vector Segment<br/>Type: HNSW]
+        MetaType[Metadata Segment<br/>Type: SQLite]
+        RecType[Record Segment<br/>Type: Log]
+    end
+
+    subgraph "Vector Segment"
+        VecImpl[LocalHnswSegment]
+        VecCache[HNSW Index Cache<br/>LRU eviction]
+        VecFile[.bin files on disk]
+        VecLock[RwLock for concurrency]
+    end
+
+    subgraph "Metadata Segment"
+        MetaImpl[SqliteMetadataSegment]
+        MetaDB[(SQLite Database)]
+        MetaIndex[Indexes on ID, metadata]
+        MetaQuery[PyPika Query Builder]
+    end
+
+    subgraph "Record Segment"
+        RecImpl[RecordSegment]
+        RecLog[WAL3 Log]
+        RecSnapshot[Periodic Snapshots]
+        RecGC[Garbage Collection]
+    end
+
+    subgraph "Segment Manager"
+        SegMgr[SegmentManager]
+        SegCache[LRU Cache<br/>In-memory segments]
+        SegFactory[Segment Factory<br/>Create/Load]
+        SysDB[(SysDB<br/>Segment Catalog)]
+    end
+
+    %% Collection to segments
+    CollMeta --> VecType
+    CollMeta --> MetaType
+    CollMeta --> RecType
+
+    %% Segment types to implementations
+    VecType --> VecImpl
+    MetaType --> MetaImpl
+    RecType --> RecImpl
+
+    %% Vector segment internals
+    VecImpl --> VecCache
+    VecImpl --> VecLock
+    VecCache --> VecFile
+
+    %% Metadata segment internals
+    MetaImpl --> MetaDB
+    MetaImpl --> MetaQuery
+    MetaDB --> MetaIndex
+
+    %% Record segment internals
+    RecImpl --> RecLog
+    RecImpl --> RecSnapshot
+    RecImpl --> RecGC
+
+    %% Segment manager
+    SegMgr --> SegCache
+    SegMgr --> SegFactory
+    SegMgr --> SysDB
+    SegFactory --> VecImpl
+    SegFactory --> MetaImpl
+    SegFactory --> RecImpl
+
+    %% Styling
+    classDef collClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef typeClass fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef vecClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef metaClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef recClass fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef mgrClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+
+    class CollMeta collClass
+    class VecType,MetaType,RecType typeClass
+    class VecImpl,VecCache,VecFile,VecLock vecClass
+    class MetaImpl,MetaDB,MetaIndex,MetaQuery metaClass
+    class RecImpl,RecLog,RecSnapshot,RecGC recClass
+    class SegMgr,SegCache,SegFactory,SysDB mgrClass
