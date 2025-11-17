@@ -153,11 +153,8 @@ D = TypeVar("D", bound=BaseModel, contravariant=True)
 
 
 def validate_model(model: Type[D], data: Any) -> D:  # type: ignore
-    """Used for backward compatibility with Pydantic 1.x"""
-    try:
-        return model.model_validate(data)  # pydantic 2.x
-    except AttributeError:
-        return model.parse_obj(data)  # pydantic 1.x
+    """Validate data using Pydantic V2"""
+    return model.model_validate(data)
 
 
 class ChromaAPIRouter(fastapi.APIRouter):  # type: ignore

@@ -8,7 +8,7 @@ from overrides import override
 from typing_extensions import TypedDict, TypeVar
 from uuid import UUID
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from chromadb.api.configuration import (
     ConfigurationInternal,
@@ -73,20 +73,24 @@ class Collection(
 ):
     """A model of a collection used for transport, serialization, and storage"""
 
+    model_config = ConfigDict(
+        strict=False,  # Allow type coercion for backwards compatibility
+        validate_assignment=True,
+        arbitrary_types_allowed=True,
+    )
+
     id: UUID
     name: str
     configuration_json: Dict[str, Any]
-    serialized_schema: Optional[Dict[str, Any]]
-    metadata: Optional[
-        Dict[str, Any]
-    ]  # Dict[str, Any] needed by pydantic 1.x as it doesn't work well Union types and converts all types to str
-    dimension: Optional[int]
+    serialized_schema: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None  # V2 handles Union types properly
+    dimension: Optional[int] = None
     tenant: str
     database: str
     # The version and log position is only used in the distributed version of chroma
     # in single-node chroma, this field is always 0
-    version: int
-    log_position: int
+    version: int = 0
+    log_position: int = 0
 
     def __init__(
         self,

@@ -12,16 +12,8 @@ from overrides import override
 from typing_extensions import Literal
 import platform
 
-in_pydantic_v2 = False
-try:
-    from pydantic import BaseSettings
-except ImportError:
-    in_pydantic_v2 = True
-    from pydantic.v1 import BaseSettings
-    from pydantic.v1 import validator
-
-if not in_pydantic_v2:
-    from pydantic import validator  # type: ignore # noqa
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 
 # The thin client will have a flag to control which implementations to use
 is_thin_client = False
@@ -127,9 +119,10 @@ class Settings(BaseSettings):  # type: ignore
     # Can be "chromadb.api.segment.SegmentAPI" or "chromadb.api.fastapi.FastAPI" or "chromadb.api.rust.RustBindingsAPI"
     chroma_api_impl: str = "chromadb.api.rust.RustBindingsAPI"
 
-    @validator("chroma_server_nofile", pre=True, always=True, allow_reuse=True)
+    @field_validator("chroma_server_nofile", mode='before')
+    @classmethod
     def empty_str_to_none(cls, v: str) -> Optional[str]:
-        if type(v) is str and v.strip() == "":
+        if isinstance(v, str) and v.strip() == "":
             return None
         return v
 
@@ -323,9 +316,12 @@ class Settings(BaseSettings):  # type: ignore
             raise ValueError(LEGACY_ERROR)
         return val
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 
 T = TypeVar("T", bound="Component")

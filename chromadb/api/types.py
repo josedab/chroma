@@ -21,7 +21,7 @@ from numpy.typing import NDArray
 import numpy as np
 import warnings
 from typing_extensions import TypedDict, Protocol, runtime_checkable
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 import chromadb.errors as errors
@@ -1526,7 +1526,7 @@ def _create_extra_fields_validator(valid_fields: list[str]) -> Any:
 class FtsIndexConfig(BaseModel):
     """Configuration for Full-Text Search index. No parameters required."""
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     pass
 
@@ -1592,7 +1592,7 @@ class SpannIndexConfig(BaseModel):
 class VectorIndexConfig(BaseModel):
     """Configuration for vector index with space, embedding function, and algorithm config."""
 
-    model_config = {"arbitrary_types_allowed": True, "extra": "forbid"}
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     space: Optional[Space] = None
     embedding_function: Optional[Any] = DefaultEmbeddingFunction()
@@ -1643,7 +1643,7 @@ class VectorIndexConfig(BaseModel):
 class SparseVectorIndexConfig(BaseModel):
     """Configuration for sparse vector index."""
 
-    model_config = {"arbitrary_types_allowed": True, "extra": "forbid"}
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     # TODO(Sanket): Change this to the appropriate sparse ef and use a default here.
     embedding_function: Optional[Any] = None
@@ -1695,7 +1695,7 @@ class SparseVectorIndexConfig(BaseModel):
 class StringInvertedIndexConfig(BaseModel):
     """Configuration for string inverted index."""
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     pass
 
@@ -1703,7 +1703,7 @@ class StringInvertedIndexConfig(BaseModel):
 class IntInvertedIndexConfig(BaseModel):
     """Configuration for integer inverted index."""
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     pass
 
@@ -1711,7 +1711,7 @@ class IntInvertedIndexConfig(BaseModel):
 class FloatInvertedIndexConfig(BaseModel):
     """Configuration for float inverted index."""
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     pass
 
@@ -1719,7 +1719,7 @@ class FloatInvertedIndexConfig(BaseModel):
 class BoolInvertedIndexConfig(BaseModel):
     """Configuration for boolean inverted index."""
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     pass
 

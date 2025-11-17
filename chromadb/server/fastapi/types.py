@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Any, Dict, List, Optional
 from chromadb.api.types import (
     CollectionMetadata,
@@ -9,6 +9,8 @@ from chromadb.api.types import (
 
 
 class AddEmbedding(BaseModel):
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     # Pydantic doesn't handle Union types cleanly like Embeddings which has
     # Union[int, float] so we use Any here to ensure data is parsed
     # to its original type.
@@ -20,6 +22,8 @@ class AddEmbedding(BaseModel):
 
 
 class UpdateEmbedding(BaseModel):
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     embeddings: Optional[List[Any]] = None
     metadatas: Optional[List[Optional[Dict[Any, Any]]]] = None
     documents: Optional[List[Optional[str]]] = None
@@ -28,6 +32,8 @@ class UpdateEmbedding(BaseModel):
 
 
 class QueryEmbedding(BaseModel):
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     # TODO: Pydantic doesn't bode well with recursive types so we use generic Dicts
     # for Where and WhereDocument. This is not ideal, but it works for now since
     # there is a lot of downstream validation.
@@ -39,6 +45,8 @@ class QueryEmbedding(BaseModel):
 
 
 class GetEmbedding(BaseModel):
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     ids: Optional[List[str]] = None
     where: Optional[Dict[Any, Any]] = None
     where_document: Optional[Dict[Any, Any]] = None
@@ -48,12 +56,16 @@ class GetEmbedding(BaseModel):
 
 
 class DeleteEmbedding(BaseModel):
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     ids: Optional[List[str]] = None
     where: Optional[Dict[Any, Any]] = None
     where_document: Optional[Dict[Any, Any]] = None
 
 
 class CreateCollection(BaseModel):
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     name: str
     # TODO: Make CollectionConfiguration a Pydantic model
     # In 0.5.4 we added the configuration field to the CreateCollection model
@@ -65,14 +77,20 @@ class CreateCollection(BaseModel):
 
 
 class UpdateCollection(BaseModel):
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     new_name: Optional[str] = None
     new_metadata: Optional[CollectionMetadata] = None
     new_configuration: Optional[Dict[str, Any]] = None
 
 
 class CreateDatabase(BaseModel):
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     name: str
 
 
 class CreateTenant(BaseModel):
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     name: str
