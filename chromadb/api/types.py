@@ -739,7 +739,7 @@ class IndexMetadata(TypedDict):
     time_created: float
 
 
-Space = Literal["cosine", "l2", "ip"]
+Space = Literal["cosine", "l2", "ip", "hamming", "manhattan", "jaccard"]
 
 
 # TODO: make warnings prettier and add link to migration docs

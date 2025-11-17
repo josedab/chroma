@@ -8,7 +8,7 @@ from chromadb.types import Metadata
 Validator = Callable[[Union[str, int, float]], bool]
 
 param_validators: Dict[str, Validator] = {
-    "hnsw:space": lambda p: bool(re.match(r"^(l2|cosine|ip)$", str(p))),
+    "hnsw:space": lambda p: bool(re.match(r"^(l2|cosine|ip|hamming|manhattan|jaccard)$", str(p))),
     "hnsw:construction_ef": lambda p: isinstance(p, int),
     "hnsw:search_ef": lambda p: isinstance(p, int),
     "hnsw:M": lambda p: isinstance(p, int),

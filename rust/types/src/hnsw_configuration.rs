@@ -37,6 +37,12 @@ pub enum Space {
     Cosine,
     #[serde(rename = "ip")]
     Ip,
+    #[serde(rename = "hamming")]
+    Hamming,
+    #[serde(rename = "manhattan")]
+    Manhattan,
+    #[serde(rename = "jaccard")]
+    Jaccard,
 }
 
 pub fn default_construction_ef() -> usize {

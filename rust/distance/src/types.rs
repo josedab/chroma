@@ -211,6 +211,9 @@ use thiserror::Error;
 /// - `Euclidean` - The Euclidean or l2 norm.
 /// - `Cosine` - The cosine distance. Specifically, 1 - cosine.
 /// - `InnerProduct` - The inner product. Specifically, 1 - inner product.
+/// - `Hamming` - The Hamming distance for binary/integer vectors.
+/// - `Manhattan` - The Manhattan (L1) distance.
+/// - `Jaccard` - The Jaccard distance for binary vectors.
 /// # Notes
 /// See <https://docs.trychroma.com/guides#changing-the-distance-function>
 #[derive(Clone, Debug, PartialEq)]
@@ -218,6 +221,9 @@ pub enum DistanceFunction {
     Euclidean,
     Cosine,
     InnerProduct,
+    Hamming,
+    Manhattan,
+    Jaccard,
 }
 
 impl From<Space> for DistanceFunction {
@@ -226,6 +232,9 @@ impl From<Space> for DistanceFunction {
             Space::L2 => DistanceFunction::Euclidean,
             Space::Cosine => DistanceFunction::Cosine,
             Space::Ip => DistanceFunction::InnerProduct,
+            Space::Hamming => DistanceFunction::Hamming,
+            Space::Manhattan => DistanceFunction::Manhattan,
+            Space::Jaccard => DistanceFunction::Jaccard,
         }
     }
 }
@@ -397,6 +406,44 @@ impl DistanceFunction {
                 }
                 1.0_f32 - sum
             }
+            DistanceFunction::Hamming => {
+                // Hamming distance: count of positions where elements differ
+                let mut count = 0.0;
+                for i in 0..a.len() {
+                    if a[i] != b[i] {
+                        count += 1.0;
+                    }
+                }
+                count
+            }
+            DistanceFunction::Manhattan => {
+                // Manhattan distance: sum of absolute differences
+                let mut sum = 0.0;
+                for i in 0..a.len() {
+                    sum += (a[i] - b[i]).abs();
+                }
+                sum
+            }
+            DistanceFunction::Jaccard => {
+                // Jaccard distance: 1 - (intersection / union) for binary vectors
+                let mut intersection = 0.0;
+                let mut union = 0.0;
+                for i in 0..a.len() {
+                    let a_bool = a[i] != 0.0;
+                    let b_bool = b[i] != 0.0;
+                    if a_bool && b_bool {
+                        intersection += 1.0;
+                    }
+                    if a_bool || b_bool {
+                        union += 1.0;
+                    }
+                }
+                if union == 0.0 {
+                    0.0
+                } else {
+                    1.0 - (intersection / union)
+                }
+            }
         }
     }
 }
@@ -423,6 +470,9 @@ impl TryFrom<&str> for DistanceFunction {
             "l2" => Ok(DistanceFunction::Euclidean),
             "cosine" => Ok(DistanceFunction::Cosine),
             "ip" => Ok(DistanceFunction::InnerProduct),
+            "hamming" => Ok(DistanceFunction::Hamming),
+            "manhattan" => Ok(DistanceFunction::Manhattan),
+            "jaccard" => Ok(DistanceFunction::Jaccard),
             _ => Err(DistanceFunctionError::InvalidDistanceFunction(
                 value.to_string(),
             )),
@@ -436,6 +486,9 @@ impl From<DistanceFunction> for String {
             DistanceFunction::Euclidean => "l2".to_string(),
             DistanceFunction::Cosine => "cosine".to_string(),
             DistanceFunction::InnerProduct => "ip".to_string(),
+            DistanceFunction::Hamming => "hamming".to_string(),
+            DistanceFunction::Manhattan => "manhattan".to_string(),
+            DistanceFunction::Jaccard => "jaccard".to_string(),
         }
     }
 }
@@ -452,6 +505,12 @@ mod tests {
         assert_eq!(distance_function, DistanceFunction::Cosine);
         let distance_function: DistanceFunction = "ip".try_into().unwrap();
         assert_eq!(distance_function, DistanceFunction::InnerProduct);
+        let distance_function: DistanceFunction = "hamming".try_into().unwrap();
+        assert_eq!(distance_function, DistanceFunction::Hamming);
+        let distance_function: DistanceFunction = "manhattan".try_into().unwrap();
+        assert_eq!(distance_function, DistanceFunction::Manhattan);
+        let distance_function: DistanceFunction = "jaccard".try_into().unwrap();
+        assert_eq!(distance_function, DistanceFunction::Jaccard);
     }
 
     #[test]
@@ -462,6 +521,12 @@ mod tests {
         assert_eq!(distance_function, "cosine");
         let distance_function: String = DistanceFunction::InnerProduct.into();
         assert_eq!(distance_function, "ip");
+        let distance_function: String = DistanceFunction::Hamming.into();
+        assert_eq!(distance_function, "hamming");
+        let distance_function: String = DistanceFunction::Manhattan.into();
+        assert_eq!(distance_function, "manhattan");
+        let distance_function: String = DistanceFunction::Jaccard.into();
+        assert_eq!(distance_function, "jaccard");
     }
 
     #[test]
@@ -488,5 +553,66 @@ mod tests {
             distance_function.distance(&a_norm, &b_norm),
             inner_product_sim
         );
+    }
+
+    #[test]
+    fn test_hamming_distance() {
+        let distance_function: DistanceFunction = "hamming".try_into().unwrap();
+
+        // Test identical vectors
+        let a = vec![1.0, 0.0, 1.0, 1.0];
+        assert_eq!(distance_function.distance(&a, &a), 0.0);
+
+        // Test different vectors
+        let b = vec![1.0, 1.0, 0.0, 1.0];
+        assert_eq!(distance_function.distance(&a, &b), 2.0); // 2 positions differ
+
+        // Test completely different
+        let c = vec![0.0, 1.0, 0.0, 0.0];
+        assert_eq!(distance_function.distance(&a, &c), 4.0); // all 4 positions differ
+    }
+
+    #[test]
+    fn test_manhattan_distance() {
+        let distance_function: DistanceFunction = "manhattan".try_into().unwrap();
+
+        // Test identical vectors
+        let a = vec![1.0, 2.0, 3.0];
+        assert_eq!(distance_function.distance(&a, &a), 0.0);
+
+        // Test different vectors
+        let b = vec![4.0, 5.0, 6.0];
+        assert_eq!(distance_function.distance(&a, &b), 9.0); // |1-4| + |2-5| + |3-6| = 9
+
+        // Test with negative differences
+        let c = vec![0.0, 0.0, 0.0];
+        let d = vec![1.0, 2.0, 3.0];
+        assert_eq!(distance_function.distance(&c, &d), 6.0); // |0-1| + |0-2| + |0-3| = 6
+    }
+
+    #[test]
+    fn test_jaccard_distance() {
+        let distance_function: DistanceFunction = "jaccard".try_into().unwrap();
+
+        // Test identical vectors (Jaccard = 0)
+        let a = vec![1.0, 0.0, 1.0, 0.0];
+        assert_eq!(distance_function.distance(&a, &a), 0.0);
+
+        // Test partial overlap
+        let b = vec![1.0, 1.0, 0.0, 0.0];
+        // Intersection: 1 (position 0), Union: 3 (positions 0, 1, 2)
+        // Jaccard distance = 1 - 1/3 = 2/3
+        let expected = 1.0 - (1.0 / 3.0);
+        assert!((distance_function.distance(&a, &b) - expected).abs() < 1e-6);
+
+        // Test disjoint sets (Jaccard = 1)
+        let c = vec![1.0, 1.0, 0.0, 0.0];
+        let d = vec![0.0, 0.0, 1.0, 1.0];
+        assert_eq!(distance_function.distance(&c, &d), 1.0);
+
+        // Test empty sets (both zeros)
+        let e = vec![0.0, 0.0, 0.0, 0.0];
+        let f = vec![0.0, 0.0, 0.0, 0.0];
+        assert_eq!(distance_function.distance(&e, &f), 0.0);
     }
 }
