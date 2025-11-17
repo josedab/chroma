@@ -18,7 +18,7 @@ from anyio import (
 from fastapi import FastAPI as _FastAPI, Response, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import ORJSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi import HTTPException, status
 from functools import wraps
@@ -64,12 +64,14 @@ from chromadb.server.fastapi.types import (
     DeleteEmbedding,
     GetEmbedding,
     QueryEmbedding,
+    QueryStreamEmbedding,
     CreateCollection,
     UpdateCollection,
     UpdateEmbedding,
 )
 from starlette.datastructures import Headers
 import logging
+import json
 
 from chromadb.telemetry.product.events import ServerStartEvent
 from chromadb.utils.fastapi import fastapi_json_response, string_to_uuid as _uuid
@@ -1405,6 +1407,13 @@ class FastAPI(Server):
             openapi_extra=self.get_openapi_extras_for_body_model(QueryEmbedding),
         )
         self.router.add_api_route(
+            "/api/v1/collections/{collection_id}/query_stream",
+            self.query_stream_v1,
+            methods=["POST"],
+            response_model=None,
+            openapi_extra=self.get_openapi_extras_for_body_model(QueryStreamEmbedding),
+        )
+        self.router.add_api_route(
             "/api/v1/collections/{collection_name}",
             self.get_collection_v1,
             methods=["GET"],
@@ -2174,5 +2183,78 @@ class FastAPI(Server):
             ]
 
         return nnresult
+
+    @trace_method("query_stream_v1", OpenTelemetryGranularity.OPERATION)
+    @rate_limit
+    async def query_stream_v1(
+        self,
+        collection_id: str,
+        request: Request,
+    ) -> StreamingResponse:
+        """Stream query results as Server-Sent Events (SSE)."""
+
+        async def event_generator():
+            """Generate SSE events for each batch of results."""
+            try:
+                # Parse request body
+                raw_body = await request.body()
+                query = validate_model(QueryStreamEmbedding, orjson.loads(raw_body))
+
+                # Authenticate and authorize
+                # NOTE(rescrv, iron will auth): v1
+                await to_thread.run_sync(
+                    self.sync_auth_and_get_tenant_and_database_for_request,
+                    request.headers,
+                    AuthzAction.QUERY,
+                    None,
+                    None,
+                    collection_id,
+                )
+
+                # Get the collection
+                collection = self._api.get_collection(
+                    collection_id=_uuid(collection_id),
+                )
+
+                # Stream query results in batches
+                for batch in collection.query_stream(
+                    query_embeddings=cast(
+                        Embeddings,
+                        convert_list_embeddings_to_np(query.query_embeddings)
+                        if query.query_embeddings
+                        else None,
+                    ),
+                    n_results=query.n_results,
+                    where=query.where,
+                    where_document=query.where_document,
+                    include=query.include,
+                    batch_size=query.batch_size,
+                ):
+                    # Convert numpy embeddings to lists for JSON serialization
+                    batch_dict = dict(batch)
+                    if batch_dict.get("embeddings") is not None:
+                        batch_dict["embeddings"] = [
+                            emb.tolist() if hasattr(emb, "tolist") else emb
+                            for emb in batch_dict["embeddings"]
+                        ]
+
+                    # Send as SSE event
+                    data = json.dumps(batch_dict)
+                    yield f"data: {data}\n\n"
+
+            except Exception as e:
+                # Send error as SSE event
+                error_data = json.dumps({"error": str(e)})
+                yield f"data: {error_data}\n\n"
+                logger.exception("Error in query_stream_v1")
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
 
     # =========================================================================

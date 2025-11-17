@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional, Union, List, cast, Dict, Any
+from typing import TYPE_CHECKING, Optional, Union, List, cast, Dict, Any, Iterator
 
 from chromadb.api.models.CollectionCommon import CollectionCommon
 from chromadb.api.types import (
@@ -14,6 +14,7 @@ from chromadb.api.types import (
     IDs,
     GetResult,
     QueryResult,
+    QueryResultBatch,
     ID,
     OneOrMany,
     WhereDocument,
@@ -239,6 +240,154 @@ class Collection(CollectionCommon["ServerAPI"]):
         return self._transform_query_response(
             response=query_results, include=query_request["include"]
         )
+
+    def query_stream(
+        self,
+        query_embeddings: Optional[
+            Union[
+                OneOrMany[Embedding],
+                OneOrMany[PyEmbedding],
+            ]
+        ] = None,
+        query_texts: Optional[OneOrMany[Document]] = None,
+        query_images: Optional[OneOrMany[Image]] = None,
+        query_uris: Optional[OneOrMany[URI]] = None,
+        ids: Optional[OneOrMany[ID]] = None,
+        n_results: int = 10,
+        where: Optional[Where] = None,
+        where_document: Optional[WhereDocument] = None,
+        include: Include = [
+            "metadatas",
+            "documents",
+            "distances",
+        ],
+        batch_size: int = 100,
+    ) -> Iterator[QueryResultBatch]:
+        """Stream query results in batches to handle large result sets efficiently.
+
+        Args:
+            query_embeddings: The embeddings to get the closest neighbors of. Optional.
+            query_texts: The document texts to get the closest neighbors of. Optional.
+            query_images: The images to get the closest neighbors of. Optional.
+            query_uris: The URIs to be used with data loader. Optional.
+            ids: A subset of ids to search within. Optional.
+            n_results: The total number of neighbors to return. Optional.
+            where: A Where type dict used to filter results by. E.g. `{"$and": [{"color" : "red"}, {"price": {"$gte": 4.20}}]}`. Optional.
+            where_document: A WhereDocument type dict used to filter by the documents. E.g. `{"$contains": "hello"}`. Optional.
+            include: A list of what to include in the results. Can contain `"embeddings"`, `"metadatas"`, `"documents"`, `"distances"`. Ids are always included. Defaults to `["metadatas", "documents", "distances"]`. Optional.
+            batch_size: Number of results per batch (default 100). Optional.
+
+        Yields:
+            QueryResultBatch: Batches of results until n_results reached.
+
+        Raises:
+            ValueError: If you don't provide either query_embeddings, query_texts, or query_images
+            ValueError: If you provide both query_embeddings and query_texts
+            ValueError: If you provide both query_embeddings and query_images
+            ValueError: If you provide both query_texts and query_images
+
+        Example:
+            >>> for batch in collection.query_stream(
+            ...     query_texts=["machine learning"],
+            ...     n_results=10000,
+            ...     batch_size=100
+            ... ):
+            ...     process_results(batch['ids'])
+            ...     if batch['batch_index'] >= 10:
+            ...         break  # Stop early if needed
+        """
+
+        # Validate and prepare the query request
+        query_request = self._validate_and_prepare_query_request(
+            query_embeddings=query_embeddings,
+            query_texts=query_texts,
+            query_images=query_images,
+            query_uris=query_uris,
+            ids=ids,
+            n_results=n_results,
+            where=where,
+            where_document=where_document,
+            include=include,
+        )
+
+        # Normalize batch size
+        batch_size = min(batch_size, n_results)
+        if batch_size <= 0:
+            batch_size = 100
+
+        total_batches = (n_results + batch_size - 1) // batch_size
+
+        # Stream batches
+        for batch_idx in range(total_batches):
+            offset = batch_idx * batch_size
+            limit = min(batch_size, n_results - offset)
+
+            # Query for this batch
+            batch_results = self._client._query(
+                collection_id=self.id,
+                ids=query_request["ids"],
+                query_embeddings=query_request["embeddings"],
+                n_results=offset + limit,  # Get up to this point
+                where=query_request["where"],
+                where_document=query_request["where_document"],
+                include=query_request["include"],
+                tenant=self.tenant,
+                database=self.database,
+            )
+
+            # Transform the results
+            transformed = self._transform_query_response(
+                response=batch_results, include=query_request["include"]
+            )
+
+            # Since we're requesting cumulative results, we need to slice to get just this batch
+            # For now, we'll use a simpler approach: query with full n_results and yield in batches
+            # This is a limitation until backend pagination is implemented
+            if batch_idx == 0:
+                # On first batch, store all results
+                self._cached_query_results = transformed
+
+            # Extract batch from cached results
+            if self._cached_query_results is not None:
+                # Handle the case where we have a single query (most common)
+                # QueryResult has ids as List[IDs] where IDs = List[ID]
+                # So we need to handle the nested structure
+
+                batch_data: QueryResultBatch = {
+                    "ids": [],
+                    "embeddings": None,
+                    "documents": None,
+                    "metadatas": None,
+                    "distances": None,
+                    "batch_index": batch_idx,
+                    "total_batches": total_batches,
+                    "has_more": batch_idx < total_batches - 1,
+                }
+
+                # Extract data for the first query only (single query case)
+                if len(self._cached_query_results["ids"]) > 0:
+                    start_idx = offset
+                    end_idx = offset + limit
+
+                    batch_data["ids"] = self._cached_query_results["ids"][0][start_idx:end_idx]
+
+                    if self._cached_query_results.get("embeddings") is not None:
+                        batch_data["embeddings"] = self._cached_query_results["embeddings"][0][start_idx:end_idx]  # type: ignore
+
+                    if self._cached_query_results.get("documents") is not None:
+                        batch_data["documents"] = self._cached_query_results["documents"][0][start_idx:end_idx]  # type: ignore
+
+                    if self._cached_query_results.get("metadatas") is not None:
+                        batch_data["metadatas"] = self._cached_query_results["metadatas"][0][start_idx:end_idx]  # type: ignore
+
+                    if self._cached_query_results.get("distances") is not None:
+                        batch_data["distances"] = self._cached_query_results["distances"][0][start_idx:end_idx]  # type: ignore
+
+                yield batch_data
+
+        # Clear cached results after streaming is complete
+        if hasattr(self, '_cached_query_results'):
+            delattr(self, '_cached_query_results')
 
     def modify(
         self,

@@ -610,6 +610,19 @@ class QueryResult(TypedDict):
     included: Include
 
 
+class QueryResultBatch(TypedDict):
+    """Single batch of query results for streaming API."""
+    ids: List[ID]
+    embeddings: Optional[List[Embedding]]
+    documents: Optional[List[Document]]
+    metadatas: Optional[List[Metadata]]
+    distances: Optional[List[float]]
+    # Batch metadata
+    batch_index: int
+    total_batches: int
+    has_more: bool
+
+
 class SearchResultRow(TypedDict, total=False):
     """A single row from search results.
 

@@ -38,6 +38,16 @@ class QueryEmbedding(BaseModel):
     include: Include = IncludeMetadataDocumentsDistances
 
 
+class QueryStreamEmbedding(BaseModel):
+    """Request model for streaming query endpoint."""
+    where: Optional[Dict[Any, Any]] = None
+    where_document: Optional[Dict[Any, Any]] = None
+    query_embeddings: List[Any]
+    n_results: int = 10
+    include: Include = IncludeMetadataDocumentsDistances
+    batch_size: int = 100
+
+
 class GetEmbedding(BaseModel):
     ids: Optional[List[str]] = None
     where: Optional[Dict[Any, Any]] = None
