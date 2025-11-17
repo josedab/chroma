@@ -1,0 +1,170 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Download baseline results
+        if: github.event_name == 'pull_request'
+        uses: actions/download-artifact@v3
+        continue-on-error: true
+        with:
+          name: benchmark-baseline
+          path: ./baseline/
+
+      - name: Fetch baseline from main branch
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          # Try to get baseline from main branch if artifact doesn't exist
+          if [ ! -f baseline/baseline.json ]; then
+            mkdir -p baseline
+            git fetch origin main
+            git show origin/main:benchmarks/results/latest.json > baseline/baseline.json 2>/dev/null || echo "No baseline found"
+          fi
+
+      - name: Run benchmarks
+        run: |
+          mkdir -p benchmarks/results
+          python benchmarks/standard_suite.py \
+            --iterations 50 \
+            --warmup 5 \
+            --output benchmarks/results/current.json
+
+      - name: Compare to baseline
+        if: github.event_name == 'pull_request' && hashFiles('baseline/baseline.json') != ''
+        id: compare
+        continue-on-error: true
+        run: |
+          python benchmarks/compare.py \
+            baseline/baseline.json \
+            benchmarks/results/current.json \
+            --threshold 0.15 \
+            --report benchmarks/results/comparison.json > comparison_output.txt
+
+          # Capture exit code
+          COMPARE_EXIT=$?
+
+          # Save comparison output for PR comment
+          cat comparison_output.txt
+
+          # Set output for later steps
+          echo "has_regression=$([ $COMPARE_EXIT -eq 0 ] && echo 'false' || echo 'true')" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let comment = '## 📊 Benchmark Results\n\n';
+
+            // Check if comparison was performed
+            if (fs.existsSync('benchmarks/results/comparison.json')) {
+              const comparison = JSON.parse(fs.readFileSync('benchmarks/results/comparison.json', 'utf8'));
+
+              // Count results
+              const regressions = comparison.comparisons.filter(c => c.status === 'regression');
+              const warnings = comparison.comparisons.filter(c => c.status === 'warning');
+              const improvements = comparison.comparisons.filter(c => c.status === 'improvement');
+              const newBenchmarks = comparison.comparisons.filter(c => c.status === 'new');
+
+              comment += '### Summary\n\n';
+              comment += `- ✅ Improvements: ${improvements.length}\n`;
+              comment += `- ⚠️ Warnings: ${warnings.length}\n`;
+              comment += `- ❌ Regressions: ${regressions.length}\n`;
+              comment += `- 📊 New: ${newBenchmarks.length}\n`;
+              comment += `- 🎯 Threshold: ${comparison.threshold * 100}%\n\n`;
+
+              // Show regressions
+              if (regressions.length > 0) {
+                comment += '### 🚨 Performance Regressions\n\n';
+                regressions.forEach(r => {
+                  const change = r.regression_pct * 100;
+                  comment += `- **${r.name}**: P95 ${r.baseline.p95_ms.toFixed(2)}ms → ${r.current.p95_ms.toFixed(2)}ms (${change > 0 ? '+' : ''}${change.toFixed(1)}%)\n`;
+                });
+                comment += '\n';
+              }
+
+              // Show improvements
+              if (improvements.length > 0) {
+                comment += '### ✅ Performance Improvements\n\n';
+                improvements.forEach(r => {
+                  const change = r.regression_pct * 100;
+                  comment += `- **${r.name}**: P95 ${r.baseline.p95_ms.toFixed(2)}ms → ${r.current.p95_ms.toFixed(2)}ms (${change.toFixed(1)}%)\n`;
+                });
+                comment += '\n';
+              }
+            } else {
+              comment += '⚠️ No baseline found for comparison. Results from this run will become the new baseline.\n\n';
+
+              // Show current results
+              const current = JSON.parse(fs.readFileSync('benchmarks/results/current.json', 'utf8'));
+              comment += '### Current Results\n\n';
+              comment += '| Benchmark | P95 Latency | Throughput |\n';
+              comment += '|-----------|-------------|------------|\n';
+              current.results.forEach(r => {
+                comment += `| ${r.name} | ${r.p95_ms.toFixed(2)}ms | ${r.throughput_qps.toFixed(1)} QPS |\n`;
+              });
+            }
+
+            comment += '\n---\n';
+            comment += '*Benchmarks run with 50 iterations and 5 warmup runs*';
+
+            // Post comment
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Upload current results as baseline
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-baseline
+          path: benchmarks/results/current.json
+          retention-days: 90
+
+      - name: Save results to repository (main branch only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cp benchmarks/results/current.json benchmarks/results/latest.json
+          # Note: This file can be committed by a subsequent workflow or manually
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: benchmarks/results/
+          retention-days: 30
+
+      - name: Fail on regression
+        if: steps.compare.outputs.has_regression == 'true'
+        run: |
+          echo "Performance regression detected! See PR comment for details."
+          exit 1
