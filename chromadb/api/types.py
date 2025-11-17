@@ -125,6 +125,15 @@ __all__ = [
     "SparseVector",
     "SparseVectors",
     "validate_sparse_vectors",
+    # Multi-vector embeddings
+    "PyMultiVector",
+    "MultiVector",
+    "PyEmbeddingInput",
+    "EmbeddingInput",
+    "MultiVectorStrategy",
+    "validate_multi_vector_embeddings",
+    "is_multi_vector",
+    "normalize_multi_vector_embeddings",
 ]
 META_KEY_CHROMA_DOCUMENT = "chroma:document"
 T = TypeVar("T")
@@ -153,6 +162,15 @@ PyEmbeddings = List[PyEmbedding]
 Embedding = Vector
 Embeddings = List[Embedding]
 SparseVectors = List[SparseVector]
+
+# Multi-vector embeddings (for ColBERT, multi-aspect, multi-modal, etc.)
+PyMultiVector = List[PyEmbedding]
+MultiVector = List[Embedding]
+PyEmbeddingInput = Union[PyEmbedding, PyMultiVector]
+EmbeddingInput = Union[Embedding, MultiVector]
+
+# Multi-vector aggregation strategies
+MultiVectorStrategy = Literal["maxsim", "avg", "sum", "first"]
 
 
 @lru_cache
@@ -245,6 +263,75 @@ def normalize_embeddings(
     raise ValueError(
         f"Expected embeddings to be a list of floats or ints, a list of lists, a numpy array, or a list of numpy arrays, got {target}"
     )
+
+
+def is_multi_vector(embedding_input: Any) -> bool:
+    """Check if an embedding input is multi-vector format (list of embeddings per document)"""
+    if not isinstance(embedding_input, list) or len(embedding_input) == 0:
+        return False
+
+    first_item = embedding_input[0]
+
+    # Check if it's a list of lists (or list of arrays)
+    if isinstance(first_item, list):
+        # Could be single-vector list-of-lists OR multi-vector
+        # Multi-vector: [[[0.1, 0.2], [0.3, 0.4]], ...]  (3 levels deep)
+        # Single-vector: [[0.1, 0.2], [0.3, 0.4]]  (2 levels deep)
+        if len(first_item) > 0 and isinstance(first_item[0], list):
+            # Check if the deepest level contains numbers
+            if len(first_item[0]) > 0 and isinstance(
+                first_item[0][0], (int, float, np.number)
+            ):
+                return True
+        return False
+    elif isinstance(first_item, np.ndarray):
+        # Multi-vector would be list of lists of arrays: [[array, array], [array, array]]
+        # But this is just list of arrays, so it's single-vector
+        return False
+
+    return False
+
+
+def normalize_multi_vector_embeddings(
+    target: Optional[Union[List[MultiVector], List[PyMultiVector]]]
+) -> Optional[List[MultiVector]]:
+    """Normalize multi-vector embeddings to List[MultiVector] (List[List[Embedding]])"""
+    if target is None:
+        return None
+
+    if not isinstance(target, list) or len(target) == 0:
+        raise ValueError(
+            f"Expected multi-vector embeddings to be a non-empty list, got {target}"
+        )
+
+    result: List[MultiVector] = []
+
+    for doc_vectors in target:
+        if not isinstance(doc_vectors, list) or len(doc_vectors) == 0:
+            raise ValueError(
+                f"Expected each multi-vector to be a non-empty list of embeddings, got {doc_vectors}"
+            )
+
+        normalized_vectors: List[Embedding] = []
+        for vec in doc_vectors:
+            if isinstance(vec, np.ndarray):
+                normalized_vectors.append(vec)
+            elif isinstance(vec, list):
+                # Convert list to numpy array
+                if len(vec) > 0 and isinstance(vec[0], (int, float)):
+                    normalized_vectors.append(np.array(vec, dtype=np.float32))
+                else:
+                    raise ValueError(
+                        f"Expected embedding to be a list of numbers, got {vec}"
+                    )
+            else:
+                raise ValueError(
+                    f"Expected embedding to be a list or numpy array, got {type(vec).__name__}"
+                )
+
+        result.append(normalized_vectors)
+
+    return result
 
 
 # Metadatas
@@ -364,10 +451,24 @@ def normalize_base_record_set(
 ) -> BaseRecordSet:
     """
     Unpacks and normalizes the fields of a BaseRecordSet.
+    Supports both single-vector and multi-vector embeddings.
     """
+    # Detect and normalize multi-vector vs single-vector
+    normalized_embeddings = None
+    if embeddings is not None:
+        # Check if this is multi-vector format
+        if is_multi_vector(embeddings):
+            # Normalize as multi-vector, then flatten for storage
+            multi_vectors = normalize_multi_vector_embeddings(embeddings)
+            # For now, store multi-vectors as metadata flag + flattened storage
+            # The storage layer will handle the flattening
+            normalized_embeddings = multi_vectors  # type: ignore
+        else:
+            # Normal single-vector path
+            normalized_embeddings = normalize_embeddings(embeddings)
 
     return BaseRecordSet(
-        embeddings=normalize_embeddings(embeddings),
+        embeddings=normalized_embeddings,
         documents=maybe_cast_one_to_many(documents),
         images=maybe_cast_one_to_many(images),
         uris=maybe_cast_one_to_many(uris),
@@ -1299,6 +1400,65 @@ def validate_embeddings(embeddings: Embeddings) -> Embeddings:
                 f"{embedding.dtype} - {embedding}"
             )
     return embeddings
+
+
+def validate_multi_vector_embeddings(
+    multi_vector_embeddings: List[MultiVector],
+) -> List[MultiVector]:
+    """Validates multi-vector embeddings to ensure it is a list of lists of numpy arrays"""
+    if not isinstance(multi_vector_embeddings, list):
+        raise ValueError(
+            f"Expected multi_vector_embeddings to be a list, got {type(multi_vector_embeddings).__name__}"
+        )
+    if len(multi_vector_embeddings) == 0:
+        raise ValueError(
+            f"Expected multi_vector_embeddings to be a list with at least one item, got {len(multi_vector_embeddings)} multi-vectors"
+        )
+
+    for doc_idx, multi_vector in enumerate(multi_vector_embeddings):
+        if not isinstance(multi_vector, list):
+            raise ValueError(
+                f"Expected each multi-vector to be a list of embeddings, got {type(multi_vector).__name__} at position {doc_idx}"
+            )
+        if len(multi_vector) == 0:
+            raise ValueError(
+                f"Expected each multi-vector to have at least one embedding, got 0 embeddings at position {doc_idx}"
+            )
+
+        # Validate each embedding in the multi-vector
+        for vec_idx, embedding in enumerate(multi_vector):
+            if not isinstance(embedding, np.ndarray):
+                raise ValueError(
+                    f"Expected each embedding in multi-vector to be a numpy array, got {type(embedding).__name__} at position {doc_idx}, vector {vec_idx}"
+                )
+            if embedding.ndim == 0:
+                raise ValueError(
+                    f"Expected a 1-dimensional array, got a 0-dimensional array at position {doc_idx}, vector {vec_idx}"
+                )
+            if embedding.size == 0:
+                raise ValueError(
+                    f"Expected each embedding to be a 1-dimensional numpy array with at least 1 value. Got empty array at position {doc_idx}, vector {vec_idx}"
+                )
+            if embedding.dtype not in [
+                np.float16,
+                np.float32,
+                np.float64,
+                np.int32,
+                np.int64,
+            ]:
+                raise ValueError(
+                    f"Expected embedding values to be int or float, got {embedding.dtype} at position {doc_idx}, vector {vec_idx}"
+                )
+
+        # Ensure all embeddings in a multi-vector have same dimensionality
+        first_dim = len(multi_vector[0])
+        for vec_idx, embedding in enumerate(multi_vector[1:], start=1):
+            if len(embedding) != first_dim:
+                raise ValueError(
+                    f"All embeddings in a multi-vector must have same dimensionality. Expected {first_dim}, got {len(embedding)} at position {doc_idx}, vector {vec_idx}"
+                )
+
+    return multi_vector_embeddings
 
 
 def validate_sparse_vectors(vectors: SparseVectors) -> SparseVectors:

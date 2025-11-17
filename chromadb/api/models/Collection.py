@@ -6,6 +6,9 @@ from chromadb.api.types import (
     CollectionMetadata,
     Embedding,
     PyEmbedding,
+    MultiVector,
+    PyMultiVector,
+    MultiVectorStrategy,
     Include,
     Metadata,
     Document,
@@ -55,6 +58,8 @@ class Collection(CollectionCommon["ServerAPI"]):
             Union[
                 OneOrMany[Embedding],
                 OneOrMany[PyEmbedding],
+                List["MultiVector"],  # Multi-vector support
+                List["PyMultiVector"],  # Multi-vector support (Python types)
             ]
         ] = None,
         metadatas: Optional[OneOrMany[Metadata]] = None,
@@ -173,6 +178,8 @@ class Collection(CollectionCommon["ServerAPI"]):
             Union[
                 OneOrMany[Embedding],
                 OneOrMany[PyEmbedding],
+                List["MultiVector"],  # Multi-vector support
+                List["PyMultiVector"],  # Multi-vector support (Python types)
             ]
         ] = None,
         query_texts: Optional[OneOrMany[Document]] = None,
@@ -187,6 +194,7 @@ class Collection(CollectionCommon["ServerAPI"]):
             "documents",
             "distances",
         ],
+        multi_vector_strategy: Optional["MultiVectorStrategy"] = None,
     ) -> QueryResult:
         """Get the n_results nearest neighbor embeddings for provided query_embeddings or query_texts.
 
@@ -222,6 +230,7 @@ class Collection(CollectionCommon["ServerAPI"]):
             where=where,
             where_document=where_document,
             include=include,
+            multi_vector_strategy=multi_vector_strategy,
         )
 
         query_results = self._client._query(
@@ -232,6 +241,7 @@ class Collection(CollectionCommon["ServerAPI"]):
             where=query_request["where"],
             where_document=query_request["where_document"],
             include=query_request["include"],
+            multi_vector_strategy=query_request.get("multi_vector_strategy"),
             tenant=self.tenant,
             database=self.database,
         )
